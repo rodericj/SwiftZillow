@@ -5,13 +5,18 @@ enum CommandLineError: Error {
   case invalidInput
   case noAddress
   case unableToGenerateRequestURL
+  case noZWID
 }
 struct ZillowGenerator {
-  static func queryURL(from input: String) throws -> URL {
+  let zwsID: String
+  init(zwsID: String) {
+      self.zwsID = zwsID
+  }
+
+  func queryURL(from input: String) throws -> URL {
     let addressComponents = input.split(separator: "-")
     let zip = addressComponents.last
     let addressWithoutZip = addressComponents.dropLast().joined(separator: "-")
-    let zwsID = "MyZillowID"
 
     var components = URLComponents()
     components.scheme = "https"
@@ -36,6 +41,16 @@ extension CommandLine {
     }
     return URL(string: inputURL)
   }
+
+  static func zwid() throws -> String {
+    guard let index = CommandLine.arguments.firstIndex(of: "-zwid") else {
+      throw CommandLineError.noZWID
+    }
+    guard CommandLine.arguments.count > index else {
+      throw CommandLineError.noZWID
+    }
+    return CommandLine.arguments[index + 1]
+  }
 }
 
 func getPropertyInfo() throws {
@@ -45,15 +60,22 @@ func getPropertyInfo() throws {
   guard let address = originalURL.pathComponents.dropFirst(2).first else {
     throw CommandLineError.noAddress
   }
+
+  let zwid = try CommandLine.zwid()
   
-  let url = try ZillowGenerator.queryURL(from: address)
+  let generator = ZillowGenerator(zwsID: zwid)
+  let url = try generator.queryURL(from: address)
 
   do {
     let decoder = XMLDecoder()
     decoder.shouldProcessNamespaces = true
     let data = try Data(contentsOf: url)
     let body = try decoder.decode(Body.self, from: data)
-    print(body.response.results.result)
+    if body.message.code == 0, let response = body.response {
+      print(response.results.result)
+    } else {
+      print(body.message.text)
+    }
   } catch {
     print(error)
     return
